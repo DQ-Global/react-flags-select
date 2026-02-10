@@ -4,6 +4,13 @@ $gray-text: #707070;
 $gray: #eaeaea;
 $gray-alt: #bdbbbb;
 
+.preferredSeparator {
+  border-bottom: 1px solid #eee;
+  margin: 4px 0;
+  height: 0;
+  list-style: none;
+}
+
 .flagsSelect {
   position: relative;
   vertical-align: inherit;

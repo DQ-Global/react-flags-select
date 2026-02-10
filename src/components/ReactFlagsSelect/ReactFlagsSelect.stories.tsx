@@ -144,3 +144,20 @@ export const WithCountries: Story = {
     );
   },
 };
+
+export const WithPreferredCountries: Story = {
+  args: {
+    //countries: ["US", "GB", "DE", "FR", "NG", "ES"],
+    preferredCountries: ["GB", "US", "FR"],
+    blacklistCountries: false,
+    searchable: false,
+  },
+  render: (args) => {
+    const { selected, onSelect } = useSelected();
+    return (
+      <div className="demo-wrapper">
+        <ReactFlagsSelect {...args} selected={selected} onSelect={onSelect} />
+      </div>
+    );
+  },
+};

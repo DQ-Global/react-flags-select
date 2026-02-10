@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import ReactDOM from "react-dom";
 import cx from "classnames";
 
 import { countries as AllCountries } from "../../data";
@@ -41,6 +42,7 @@ export type Props = {
   searchPlaceholder?: string;
   alignOptionsToRight?: boolean;
   countries?: CountryCodes;
+  preferredCountries?: CountryCodes;
   blacklistCountries?: boolean;
   fullWidth?: boolean;
   disabled?: boolean;
@@ -65,6 +67,7 @@ const ReactFlagsSelect: React.FC<Props> = ({
   searchPlaceholder,
   alignOptionsToRight = false,
   countries,
+  preferredCountries,
   blacklistCountries = false,
   fullWidth = true,
   disabled = false,
@@ -79,9 +82,12 @@ const ReactFlagsSelect: React.FC<Props> = ({
   ] = useState<CountryCodes>([]);
   const [filterValue, setFilterValue] = useState<string>("");
 
-  const selectedFlagRef = useRef(null);
-  const optionsRef = useRef(null);
-  const filterTextRef = useRef(null);
+  const selectedFlagRef = useRef<HTMLButtonElement | null>(null);
+  const optionsRef = useRef<HTMLUListElement | null>(null);
+  const filterTextRef = useRef<HTMLInputElement | null>(null);
+
+  // For portal dropdown positioning
+  const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 0 });
 
   const validSelectedValue = countriesOptions.includes(selected)
     ? selected
@@ -101,11 +107,28 @@ const ReactFlagsSelect: React.FC<Props> = ({
     return customLabels[countryCode] || AllCountries[countryCode];
   };
 
-  const toggleDropdown = () => setIsDropdownOpen(!isDropdownOpen);
+ const updateDropdownPosition = React.useCallback(() => {
+    if (selectedFlagRef.current) {
+      const rect = selectedFlagRef.current.getBoundingClientRect();
+      setDropdownPosition({
+        top: rect.bottom + window.scrollY,
+        left: rect.left + window.scrollX,
+        width: rect.width,
+      });
+    }
+  }, []);
+
+  const toggleDropdown = () => {
+    if (!isDropdownOpen && selectedFlagRef.current) {
+      updateDropdownPosition();
+    }
+    setIsDropdownOpen(!isDropdownOpen);
+  };
 
   const onOptionSelect = (countryCode: string) => {
     setFilterValue("");
     onSelect(countryCode);
+    toggleDropdown();
   };
 
   const filterSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -132,10 +155,12 @@ const ReactFlagsSelect: React.FC<Props> = ({
   };
 
   const closeDropdown = (e: MouseEvent) => {
+    // Close if click is outside button and dropdown
     if (
-      e.target !== selectedFlagRef.current &&
-      e.target !== optionsRef.current &&
-      e.target !== filterTextRef.current
+      selectedFlagRef.current &&
+      !selectedFlagRef.current.contains(e.target as Node) &&
+      optionsRef.current &&
+      !optionsRef.current.contains(e.target as Node)
     ) {
       setIsDropdownOpen(false);
     }
@@ -165,20 +190,55 @@ const ReactFlagsSelect: React.FC<Props> = ({
   };
 
   useEffect(() => {
-    setCountriesOptions(getCountryCodes(countries, blacklistCountries));
-  }, [countries, blacklistCountries]);
+    // Get all country codes (filtered by countries/blacklistCountries)
+    const allCodes = getCountryCodes(countries, blacklistCountries);
+    if (preferredCountries && preferredCountries.length > 0) {
+      // Remove duplicates and keep order: preferred first, then the rest
+      const preferred = preferredCountries.filter((code) => allCodes.includes(code));
+      const rest = allCodes.filter((code) => !preferred.includes(code));
+      setCountriesOptions([...preferred, ...rest]);
+    } else {
+      setCountriesOptions(allCodes);
+    }
+  }, [countries, blacklistCountries, preferredCountries]);
 
   useEffect(() => {
-    window.addEventListener("click", closeDropdown);
-
+    if (isDropdownOpen) {
+      window.addEventListener("click", closeDropdown);
+    } else {
+      window.removeEventListener("click", closeDropdown);
+    }
     return () => {
       window.removeEventListener("click", closeDropdown);
     };
-  }, []);
+  }, [isDropdownOpen]);
+
+  useEffect(() => {
+    if (!isDropdownOpen) return;
+    const handleScrollOrResize = () => {
+      updateDropdownPosition();
+    };
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
+    return () => {
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+    };
+  }, [isDropdownOpen, updateDropdownPosition]);
 
   const displayLabel = getLabel(validSelectedValue);
 
   const btnId = `${rfsKey}-btn`;
+
+  // Helper to split preferred and rest for rendering
+  const getPreferredAndRest = () => {
+    if (!preferredCountries || preferredCountries.length === 0) {
+      return { preferred: [], rest: options };
+    }
+    const preferred = options.filter((code) => preferredCountries.includes(code));
+    const rest = options.filter((code) => !preferredCountries.includes(code));
+    return { preferred, rest };
+  };
 
   return (
     <div
@@ -187,6 +247,7 @@ const ReactFlagsSelect: React.FC<Props> = ({
       })}
       id={id}
       data-testid={rfsKey}
+      style={{ position: "relative" }}
     >
       <button
         ref={selectedFlagRef}
@@ -232,12 +293,28 @@ const ReactFlagsSelect: React.FC<Props> = ({
           )}
         </span>
       </button>
-      {!disabled && isDropdownOpen && (
+      {!disabled && isDropdownOpen && ReactDOM.createPortal(
         <ul
           tabIndex={-1}
           role="listbox"
           ref={optionsRef}
-          style={{ fontSize: optionsSize }}
+          style={{
+            fontSize: optionsSize,
+            position: "absolute",
+            top: dropdownPosition.top,
+            left: dropdownPosition.left,
+            width: dropdownPosition.width,
+            minWidth: "15em",
+            zIndex: 9999,
+            background: "#fff",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            margin: 0,
+            padding: 0,
+            listStyle: "none",
+            borderRadius: 4,
+            maxHeight: 300,
+            overflowY: "auto",
+          }}
           className={cx(styles.selectOptions, {
             [styles.selectOptionsWithSearch]: searchable,
             [styles.alignOptionsToRight]: alignOptionsToRight,
@@ -258,45 +335,94 @@ const ReactFlagsSelect: React.FC<Props> = ({
               />
             </div>
           )}
-          {options.map((countryCode) => {
-            const countryFlagName = countryCodeToPascalCase(countryCode);
-            const CountryFlag = getFlag(countryFlagName as FlagKey);
-            const countryLabel = getLabel(countryCode);
-
+          {(() => {
+            const { preferred, rest } = getPreferredAndRest();
             return (
-              <li
-                key={countryCode}
-                id={`${rfsKey}-${countryCode}`}
-                role="option"
-                tabIndex={0}
-                className={cx(styles.selectOption, {
-                  [styles.selectOptionWithlabel]: showOptionLabel,
-                })}
-                onClick={() => onOptionSelect(countryCode)}
-                onKeyUp={(e) => onSelectWithKeyboard(e, countryCode)}
-              >
-                <span className={styles.selectOptionValue}>
-                  <span className={styles.selectFlag}>
-                    <CountryFlag />
-                  </span>
-                  {showOptionLabel && (
-                    <span className={styles.label}>
-                      {isCustomLabelObject(countryLabel)
-                        ? (countryLabel as CustomLabel).primary
-                        : countryLabel}
-                    </span>
-                  )}
-                  {showSecondaryOptionLabel &&
-                    isCustomLabelObject(countryLabel) && (
-                      <span className={styles.secondaryLabel}>
-                        {(countryLabel as CustomLabel).secondary}
+              <>
+                {preferred.map((countryCode) => {
+                  const countryFlagName = countryCodeToPascalCase(countryCode);
+                  const CountryFlag = getFlag(countryFlagName as FlagKey);
+                  const countryLabel = getLabel(countryCode);
+                  return (
+                    <li
+                      key={countryCode}
+                      id={`${rfsKey}-${countryCode}`}
+                      role="option"
+                      tabIndex={0}
+                      className={cx(styles.selectOption, {
+                        [styles.selectOptionWithlabel]: showOptionLabel,
+                      })}
+                      onClick={() => onOptionSelect(countryCode)}
+                      onKeyUp={(e) => onSelectWithKeyboard(e, countryCode)}
+                    >
+                      <span className={styles.selectOptionValue}>
+                        <span className={styles.selectFlag}>
+                          <CountryFlag />
+                        </span>
+                        {showOptionLabel && (
+                          <span className={styles.label}>
+                            {isCustomLabelObject(countryLabel)
+                              ? (countryLabel as CustomLabel).primary
+                              : countryLabel}
+                          </span>
+                        )}
+                        {showSecondaryOptionLabel &&
+                          isCustomLabelObject(countryLabel) && (
+                            <span className={styles.secondaryLabel}>
+                              {(countryLabel as CustomLabel).secondary}
+                            </span>
+                          )}
                       </span>
-                    )}
-                </span>
-              </li>
+                    </li>
+                  );
+                })}
+                {preferred.length > 0 && rest.length > 0 && (
+                  <li className={styles.preferredSeparator} aria-hidden="true" style={{ borderBottom: "1px solid #eee", margin: "4px 0" }} />
+                )}
+                {rest.map((countryCode) => {
+                  const countryFlagName = countryCodeToPascalCase(countryCode);
+                  const CountryFlag = getFlag(countryFlagName as FlagKey);
+                  const countryLabel = getLabel(countryCode);
+                  return (
+                    <li
+                      key={countryCode}
+                      id={`${rfsKey}-${countryCode}`}
+                      role="option"
+                      tabIndex={0}
+                      className={cx(styles.selectOption, {
+                        [styles.selectOptionWithlabel]: showOptionLabel,
+                      })}
+                      onClick={() => onOptionSelect(countryCode)}
+                      onKeyUp={(e) => onSelectWithKeyboard(e, countryCode)}
+                    >
+                      <span className={styles.selectOptionValue}>
+                        <span className={styles.selectFlag}>
+                          <CountryFlag />
+                        </span>
+                        {showOptionLabel && (
+                          <span className={styles.label} title={isCustomLabelObject(countryLabel)
+                              ? (countryLabel as CustomLabel).primary
+                              : countryLabel?.toString()}>
+                            {isCustomLabelObject(countryLabel)
+                              ? (countryLabel as CustomLabel).primary
+                              : countryLabel}
+                          </span>
+                        )}
+                        {showSecondaryOptionLabel &&
+                          isCustomLabelObject(countryLabel) && (
+                            <span className={styles.secondaryLabel}>
+                              {(countryLabel as CustomLabel).secondary}
+                            </span>
+                          )}
+                      </span>
+                    </li>
+                  );
+                })}
+              </>
             );
-          })}
-        </ul>
+          })()}
+        </ul>,
+        document.body
       )}
     </div>
   );
