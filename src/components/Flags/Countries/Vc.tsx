@@ -1,0 +1,16 @@
+import * as React from "react";
+import type { SVGProps } from "react";
+const SvgZw = (props: SVGProps<SVGSVGElement>) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="1em"
+    height="1em"
+    viewBox="0 0 240 160"
+    {...props}
+  >
+	<path fill="#fcd022" d="m0 0h240v160H0z"/>
+	<path fill="#002674" d="m0 0h60v160H0z"/>
+	<path fill="#007c2e" d="m180 0h60v160h-60zm-78 51.962 15 25.98-15 25.981-15-25.981zm36 0 15 25.98-15 25.981-15-25.981zm-18 31.176 15 25.981-15 25.981-15-25.981z"/>
+</svg>
+);
+export default SvgZw;
